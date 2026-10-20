@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>197㎡ 펜트하우스 3D 인터랙티브 뷰어</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #1a1817;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* 3D 공간 라벨 스타일 */
+        .room-label {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            background: rgba(24, 24, 27, 0.78);
+            color: #fef3c7;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 500;
+            pointer-events: auto;
+            cursor: pointer;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+
+        .room-label:hover {
+            background: rgba(217, 119, 6, 0.95);
+            color: #ffffff;
+            transform: translate(-50%, -50%) scale(1.08);
+            border-color: #fde68a;
+            z-index: 20;
+        }
+
+        .room-label .badge {
+            display: inline-block;
+            background: #f59e0b;
+            color: #18181b;
+            font-weight: 700;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            margin-right: 5px;
+            font-size: 10px;
+        }
+
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body class="relative w-screen h-screen overflow-hidden">
+
+    <!-- 3D 캔버스 컨테이너 -->
+    <div id="canvas-container" class="w-full h-full"></div>
+
+    <!-- 3D 플로팅 마커 컨테이너 -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
+
+    <!-- 좌측 상단: 타이틀 & 조작 안내 -->
+    <div class="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-xs sm:max-w-sm pointer-events-auto">
+        <div
+            class="bg-zinc-900/85 backdrop-blur-md border border-amber-500/30 rounded-2xl p-4 text-zinc-100 shadow-2xl">
+            <div class="flex items-center justify-between mb-1">
+                <span
+                    class="text-xs font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">197㎡
+                    Penthouse</span>
+                <span class="text-xs text-amber-200/80">☀ 늦은 오후 채광</span>
+            </div>
+            <h1 class="text-lg font-bold text-white tracking-tight">미니멀 우드 & 테라스 펜트하우스</h1>
+            <p class="text-xs text-zinc-300 mt-1 leading-relaxed">
+                첨부된 평면도(1~10번 구역)와 맞춤 가구 배치를 실제 개구부(창문·문)와 함께 구현한 3D 공간입니다.
+            </p>
+            <div class="mt-3 pt-2.5 border-t border-zinc-700/70 grid grid-cols-3 gap-1 text-[11px] text-zinc-300">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-amber-400 font-bold">좌클릭 드래그</span>
+                    <span>회전</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-amber-400 font-bold">우클릭 드래그</span>
+                    <span>이동</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-amber-400 font-bold">마우스 휠</span>
+                    <span>확대/축소</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 선택된 방 상세 설명 카드 -->
+        <div id="room-info-card"
+            class="bg-zinc-900/85 backdrop-blur-md border border-zinc-700/80 rounded-2xl p-3.5 text-zinc-100 shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between">
+                <h2 id="info-title" class="text-sm font-bold text-amber-300">전체 평면도 뷰 (197㎡)</h2>
+                <button id="toggle-labels-btn"
+                    class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-600 transition">
+                    라벨 숨기기
+                </button>
+            </div>
+            <p id="info-desc" class="text-xs text-zinc-300 mt-1.5 leading-relaxed">
+                하단 버튼이나 3D 공간의 번호 라벨을 클릭하면 해당 공간으로 카메라가 부드럽게 이동합니다. 내부가 잘 보이도록 지붕은 기본적으로 숨겨져 있습니다.
+            </p>
+        </div>
+    </div>
+
+    <!-- 우측 상단: 지붕/외벽/조명 옵션 토글 -->
+    <div class="absolute top-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto">
+        <div
+            class="bg-zinc-900/85 backdrop-blur-md border border-zinc-700/80 rounded-2xl p-2.5 flex flex-col gap-2 shadow-2xl">
+            <button id="btn-roof"
+                class="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition shadow">
+                <span>🏠 지붕 숨기기 (켜짐)</span>
+                <span id="roof-status-dot" class="w-2 h-2 rounded-full bg-zinc-950"></span>
+            </button>
+            <button id="btn-wall-height"
+                class="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl text-xs font-medium bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                <span>🧱 벽 높이: 기본 (2.8m)</span>
+            </button>
+            <div class="px-2 pt-1 border-t border-zinc-800 flex items-center justify-between text-[11px] text-zinc-400">
+                <span>오후 햇빛 각도</span>
+                <input id="sun-slider" type="range" min="15" max="75" value="32"
+                    class="w-24 accent-amber-400 cursor-pointer">
+            </div>
+        </div>
+    </div>
+
+    <!-- 하단 중앙: 주요 카메라 프리셋 및 공간 바로가기 컨트롤 바 -->
+    <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[95vw] max-w-5xl pointer-events-auto">
+        <div
+            class="bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 rounded-2xl p-3 shadow-2xl flex flex-col gap-2.5">
+            <!-- 필수 메인 컨트롤 버튼 -->
+            <div class="flex flex-wrap items-center justify-center gap-2">
+                <button data-cam="default"
+                    class="cam-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition shadow">
+                    🔄 처음 화면으로
+                </button>
+                <button data-cam="overview"
+                    class="cam-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-amber-300 hover:bg-zinc-700 border border-amber-500/40 transition">
+                    🗺️ 전체 보기 (평면 뷰)
+                </button>
+                <button data-cam="room2"
+                    class="cam-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-600 transition">
+                    🛋️ 거실 (2)
+                </button>
+                <button data-cam="room1"
+                    class="cam-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-600 transition">
+                    🎹 작업실 (1)
+                </button>
+                <div class="h-4 w-[1px] bg-zinc-700 mx-1 hidden sm:block"></div>
+                <!-- 3~10번 세부 공간 바로가기 -->
+                <button data-cam="room3"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-sky-300 hover:bg-zinc-700 border border-sky-500/30 transition">
+                    🍸 (3) 혼술바
+                </button>
+                <button data-cam="room4"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-emerald-300 hover:bg-zinc-700 border border-emerald-500/30 transition">
+                    🌿 (4) 중앙 정원
+                </button>
+                <button data-cam="room5"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-amber-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                    ✝️ (5) 서재/소파룸
+                </button>
+                <button data-cam="room6"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                    🛏️ (6) 안방
+                </button>
+                <button data-cam="room7"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                    👔 (7, 7-1) 드레스룸
+                </button>
+                <button data-cam="room8"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                    📦 (8) 다용도 서재
+                </button>
+                <button data-cam="room9"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 transition">
+                    🥫 (9) 팬트리 창고
+                </button>
+                <button data-cam="room10"
+                    class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-zinc-800/90 text-amber-300 hover:bg-zinc-700 border border-amber-500/30 transition">
+                    🍽️ (10) 유리 진열장 & 다이닝
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. 씬, 카메라, 렌더러 및 늦은 오후 조명 설정
+        // ============================================================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1f1b18);
+        scene.fog = new THREE.FogExp2(0x1f1b18, 0.008);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+        // 초기 카메라 위치 (남서쪽 상공에서 집 전체를 내려다보는 시점)
+        const DEFAULT_CAM = { pos: new THREE.Vector3(-4, 21, 22), target: new THREE.Vector3(0.5, 0.5, 0.5) };
+        camera.position.copy(DEFAULT_CAM.pos);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.copy(DEFAULT_CAM.target);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02; // 바닥 아래로 내려가지 않게 제한
+        controls.minDistance = 2.5;
+        controls.maxDistance = 55;
+
+        // 늦은 오후의 따뜻한 조명 구성
+        const hemiLight = new THREE.HemisphereLight(0xffe6c7, 0x3d352e, 0.65);
+        hemiLight.position.set(0, 30, 0);
+        scene.add(hemiLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffb86c, 1.35);
+        // 남서쪽에서 길게 들어오는 늦은 오후 햇살
+        sunLight.position.set(-18, 14, 18);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 1;
+        sunLight.shadow.camera.far = 65;
+        const d = 19;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // 실내 은은한 보조 포인트 조명들 (따뜻한 무드등)
+        function addWarmPointLight(x, y, z, intensity = 0.45, distance = 8) {
+            const light = new THREE.PointLight(0xffd296, intensity, distance);
+            light.position.set(x, y, z);
+            scene.add(light);
+        }
+        addWarmPointLight(-6.0, 2.4, 2.2, 0.5, 9);  // 거실 조명
+        addWarmPointLight(-6.0, 2.4, -2.5, 0.5, 9); // 주방/다이닝 조명
+        addWarmPointLight(-3.0, 2.4, 2.7, 0.6, 6);  // 혼술바 무드 조명
+        addWarmPointLight(7.2, 2.4, 1.8, 0.45, 8);  // 안방 조명
+
+        // ============================================================================
+        // 2. 개별 수정이 용이한 루트 그룹 분리 (벽, 지붕, 창문, 문, 가구)
+        // ============================================================================
+        const houseRoot = new THREE.Group();
+        houseRoot.name = "Penthouse_197sqm";
+        scene.add(houseRoot);
+
+        const floorsGroup = new THREE.Group(); floorsGroup.name = "Floors";
+        const wallsGroup = new THREE.Group(); wallsGroup.name = "Walls";
+        const roofGroup = new THREE.Group(); roofGroup.name = "Roof";
+        const windowsGroup = new THREE.Group(); windowsGroup.name = "Windows";
+        const doorsGroup = new THREE.Group(); doorsGroup.name = "Doors";
+        const furnitureGroup = new THREE.Group(); furnitureGroup.name = "Furniture";
+
+        houseRoot.add(floorsGroup, wallsGroup, roofGroup, windowsGroup, doorsGroup, furnitureGroup);
+
+        // 프로시저럴 캔버스 텍스처 생성기 (외부 이미지 없이 원목 마루, 타일, 러그 질감 표현)
+        function createWoodTexture(baseColor, lineColor, vertical = false) {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 2;
+            const step = 32;
+            for (let i = 0; i <= 256; i += step) {
+                ctx.beginPath();
+                if (vertical) { ctx.moveTo(i, 0); ctx.lineTo(i, 256); }
+                else { ctx.moveTo(0, i); ctx.lineTo(256, i); }
+                ctx.stroke();
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(4, 4);
+            return tex;
+        }
+
+        function createTileTexture(bgColor, gridColor, divisions = 8) {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = gridColor;
+            ctx.lineWidth = 2;
+            const step = 256 / divisions;
+            for (let i = 0; i <= 256; i += step) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(3, 3);
+            return tex;
+        }
+
+        // 흰색 대리석(비앙코 카라라 스타일) 프로시저럴 텍스처 생성기
+        function createMarbleTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#fcfcfc';
+            ctx.fillRect(0, 0, 512, 512);
+
+            // 은은한 대리석 마블링 결(Vein) 표현
+            const veins = [
+                { x1: 20, y1: 0, cx1: 180, cy1: 160, cx2: 310, cy2: 340, x2: 490, y2: 512, w: 3.5, alpha: 0.22 },
+                { x1: 140, y1: 0, cx1: 240, cy1: 210, cx2: 190, cy2: 390, x2: 380, y2: 512, w: 2.0, alpha: 0.16 },
+                { x1: 0, y1: 180, cx1: 160, cy1: 240, cx2: 350, cy2: 190, x2: 512, y2: 320, w: 2.5, alpha: 0.18 },
+                { x1: 80, y1: 512, cx1: 220, cy1: 350, cx2: 390, cy2: 260, x2: 512, y2: 90, w: 1.5, alpha: 0.14 }
+            ];
+            veins.forEach(v => {
+                ctx.beginPath();
+                ctx.moveTo(v.x1, v.y1);
+                ctx.bezierCurveTo(v.cx1, v.cy1, v.cx2, v.cy2, v.x2, v.y2);
+                ctx.strokeStyle = `rgba(145, 150, 160, ${v.alpha})`;
+                ctx.lineWidth = v.w;
+                ctx.stroke();
+            });
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(1.5, 1.5);
+            return tex;
+        }
+
+        // 공통 재질(Materials) 정의
+        const MAT = {
+            wallWhite: new THREE.MeshStandardMaterial({ color: 0xf7f5f0, roughness: 0.75 }),
+            wallBlue: new THREE.MeshStandardMaterial({ color: 0x26547c, roughness: 0.65 }), // (3) 혼술바 파란색 벽지
+            floorLightWood: new THREE.MeshStandardMaterial({ map: createWoodTexture('#e3cfa8', '#cbb389'), roughness: 0.55 }),
+            floorWarmWood: new THREE.MeshStandardMaterial({ map: createWoodTexture('#b6804c', '#986636'), roughness: 0.5 }),
+            floorGardenTile: new THREE.MeshStandardMaterial({ map: createTileTexture('#9aa0a6', '#7d8287', 8), roughness: 0.7 }),
+            floorBathTile: new THREE.MeshStandardMaterial({ map: createTileTexture('#d9e2ec', '#bcccdc', 10), roughness: 0.4 }),
+            whiteMarble: new THREE.MeshStandardMaterial({ map: createMarbleTexture(), color: 0xffffff, roughness: 0.18, metalness: 0.05 }),
+            woodDark: new THREE.MeshStandardMaterial({ color: 0x4a321f, roughness: 0.55 }),
+            woodWarm: new THREE.MeshStandardMaterial({ color: 0x9c6b3b, roughness: 0.5 }),
+            woodOak: new THREE.MeshStandardMaterial({ color: 0xc89966, roughness: 0.5 }),
+            blackMetal: new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.35, metalness: 0.5 }),
+            chrome: new THREE.MeshStandardMaterial({ color: 0xdcdcdc, roughness: 0.2, metalness: 0.85 }),
+            whitePlastic: new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.3 }),
+            skyBlueSofa: new THREE.MeshStandardMaterial({ color: 0x6ec1e4, roughness: 0.8 }), // (2) 하늘색 소파
+            beigeSofa: new THREE.MeshStandardMaterial({ color: 0xe6dec8, roughness: 0.8 }),
+            glass: new THREE.MeshPhysicalMaterial({
+                color: 0xdff6ff,
+                transparent: true,
+                opacity: 0.34,
+                roughness: 0.1,
+                metalness: 0.1,
+                transmission: 0.5
+            }),
+            glassCabinet: new THREE.MeshPhysicalMaterial({
+                color: 0xe2f1f8,
+                transparent: true,
+                opacity: 0.38,
+                roughness: 0.12
+            }),
+            leafGreen: new THREE.MeshStandardMaterial({ color: 0x4d8b55, roughness: 0.6 }),
+            leafDark: new THREE.MeshStandardMaterial({ color: 0x2d6a4f, roughness: 0.6 }),
+            soil: new THREE.MeshStandardMaterial({ color: 0x3b2f2f, roughness: 0.9 }),
+            ryanYellow: new THREE.MeshStandardMaterial({ color: 0xf5a623, roughness: 0.5 }),
+            apeachPink: new THREE.MeshStandardMaterial({ color: 0xffafcc, roughness: 0.5 }),
+            roofMat: new THREE.MeshStandardMaterial({
+                color: 0xf5f3ef,
+                roughness: 0.7,
+                transparent: true,
+                opacity: 0.92
+            })
+        };
+
+        // ============================================================================
+        // 3. 건축 구조 헬퍼 함수 (실제 창문/문 개구부를 가진 벽, 바닥, 유리창, 방문 생성)
+        // ============================================================================
+        const WALL_H = 2.8;
+        const WALL_T = 0.16;
+
+        function createBox(w, h, d, mat, x, y, z, parent, castShadow = true, receiveShadow = true) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = castShadow;
+            mesh.receiveShadow = receiveShadow;
+            parent.add(mesh);
+            return mesh;
+        }
+
+        // 바닥 타일 생성기 (x1, z1) ~ (x2, z2)
+        function addFloorZone(x1, z1, x2, z2, mat, name = "FloorZone", yOffset = 0) {
+            const w = Math.abs(x2 - x1);
+            const d = Math.abs(z2 - z1);
+            const cx = (x1 + x2) / 2;
+            const cz = (z1 + z2) / 2;
+            const mesh = createBox(w, 0.16, d, mat, cx, -0.08 + yOffset, cz, floorsGroup, false, true);
+            mesh.name = name;
+            return mesh;
+        }
+
+        // 창문 조립체 생성 (실제 벽 개구부 안에 창틀과 유리를 배치)
+        function addWindowAssembly(cx, cz, length, sillY, topY, isHorizontal, isSlidingGlassDoor = false) {
+            const h = topY - sillY;
+            const cy = sillY + h / 2;
+            const g = new THREE.Group();
+            g.position.set(cx, cy, cz);
+            if (!isHorizontal) g.rotation.y = Math.PI / 2;
+
+            const frameThickness = 0.05;
+            const frameDepth = WALL_T + 0.02;
+            // 상하좌우 창틀
+            createBox(length, frameThickness, frameDepth, MAT.blackMetal, 0, h / 2 - frameThickness / 2, 0, g);
+            createBox(length, frameThickness, frameDepth, MAT.blackMetal, 0, -h / 2 + frameThickness / 2, 0, g);
+            createBox(frameThickness, h, frameDepth, MAT.blackMetal, -length / 2 + frameThickness / 2, 0, 0, g);
+            createBox(frameThickness, h, frameDepth, MAT.blackMetal, length / 2 - frameThickness / 2, 0, 0, g);
+            // 중앙 멀리언(창문 분할 프레임)
+            createBox(frameThickness * 0.8, h, frameDepth * 0.9, MAT.blackMetal, 0, 0, 0, g);
+            // 투명 유리판
+            createBox(length - frameThickness * 2, h - frameThickness * 2, 0.03, MAT.glass, 0, 0, 0, g, false, false);
+
+            windowsGroup.add(g);
+        }
+
+        // 문 조립체 생성 (실제 문 개구부 안에 문틀과 반쯤 열린 원목/유리 도어 배치)
+        function addDoorAssembly(cx, cz, length, topY, isHorizontal, doorStyle = "wood") {
+            const h = topY;
+            const g = new THREE.Group();
+            g.position.set(cx, 0, cz);
+            if (!isHorizontal) g.rotation.y = Math.PI / 2;
+
+            const frameT = 0.05;
+            const frameD = WALL_T + 0.03;
+            // 좌우 및 상단 문틀
+            createBox(frameT, h, frameD, MAT.woodDark, -length / 2 + frameT / 2, h / 2, 0, g);
+            createBox(frameT, h, frameD, MAT.woodDark, length / 2 - frameT / 2, h / 2, 0, g);
+            createBox(length, frameT, frameD, MAT.woodDark, 0, h - frameT / 2, 0, g);
+
+            if (doorStyle === "open") {
+                doorsGroup.add(g);
+                return;
+            }
+
+            // 문짝 (동선이 보이도록 35도 열린 상태로 배치)
+            const pivot = new THREE.Group();
+            pivot.position.set(-length / 2 + frameT, 0, 0);
+            pivot.rotation.y = doorStyle === "glass" ? -0.55 : 0.6;
+            const leafW = length - frameT * 2;
+            const leafMat = doorStyle === "glass" ? MAT.glassCabinet : MAT.woodWarm;
+            createBox(leafW, h - frameT, 0.045, leafMat, leafW / 2, (h - frameT) / 2, 0, pivot);
+            // 도어 손잡이
+            createBox(0.08, 0.03, 0.1, MAT.chrome, leafW - 0.12, 1.0, 0, pivot);
+            g.add(pivot);
+
+            doorsGroup.add(g);
+        }
+
+        /**
+         * 실제 개구부(창문, 문)가 뚫린 벽 생성 함수
+         * openings 배열: [{ offset: 시작점으로부터 중심거리, width: 폭, type: 'window'|'door'|'glass_door'|'open', sill: 하단높이, top: 상단높이 }]
+         */
+        function addWallWithOpenings(x1, z1, x2, z2, openings = [], wallMat = MAT.wallWhite, customHeight = WALL_H) {
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+            const totalLen = Math.hypot(dx, dz);
+            const isHorizontal = Math.abs(dx) >= Math.abs(dz);
+            const dirX = dx / totalLen;
+            const dirZ = dz / totalLen;
+
+            const sorted = [...openings].sort((a, b) => a.offset - b.offset);
+            let cursor = 0;
+
+            sorted.forEach(op => {
+                const start = Math.max(0, op.offset - op.width / 2);
+                const end = Math.min(totalLen, op.offset + op.width / 2);
+
+                // 개구부 이전의 막힌 벽 구간 생성
+                if (start > cursor + 0.01) {
+                    const segLen = start - cursor;
+                    const mid = cursor + segLen / 2;
+                    const cx = x1 + dirX * mid;
+                    const cz = z1 + dirZ * mid;
+                    const w = isHorizontal ? segLen : WALL_T;
+                    const d = isHorizontal ? WALL_T : segLen;
+                    createBox(w, customHeight, d, wallMat, cx, customHeight / 2, cz, wallsGroup);
+                }
+
+                // 개구부 중심 좌표
+                const opMid = (start + end) / 2;
+                const opLen = end - start;
+                const ox = x1 + dirX * opMid;
+                const oz = z1 + dirZ * opMid;
+                const ow = isHorizontal ? opLen : WALL_T;
+                const od = isHorizontal ? WALL_T : opLen;
+
+                const sill = op.sill !== undefined ? op.sill : (op.type === 'window' ? 0.65 : 0);
+                const top = op.top !== undefined ? op.top : 2.25;
+
+                // 창문 하단 벽 (Sill wall)
+                if (sill > 0.01) {
+                    createBox(ow, sill, od, wallMat, ox, sill / 2, oz, wallsGroup);
+                }
+                // 개구부 상단 인방보 벽 (Header wall)
+                if (top < customHeight - 0.01) {
+                    const topH = customHeight - top;
+                    createBox(ow, topH, od, wallMat, ox, top + topH / 2, oz, wallsGroup);
+                }
+
+                // 창문 또는 문 프레임 추가
+                if (op.type === 'window' || op.type === 'sliding_glass') {
+                    addWindowAssembly(ox, oz, opLen, sill, top, isHorizontal, op.type === 'sliding_glass');
+                } else if (op.type === 'door' || op.type === 'glass_door' || op.type === 'open') {
+                    const style = op.type === 'glass_door' ? 'glass' : (op.type === 'open' ? 'open' : 'wood');
+                    addDoorAssembly(ox, oz, opLen, top, isHorizontal, style);
+                }
+
+                cursor = end;
+            });
+
+            // 마지막 개구부 이후의 막힌 벽 구간
+            if (cursor < totalLen - 0.01) {
+                const segLen = totalLen - cursor;
+                const mid = cursor + segLen / 2;
+                const cx = x1 + dirX * mid;
+                const cz = z1 + dirZ * mid;
+                const w = isHorizontal ? segLen : WALL_T;
+                const d = isHorizontal ? WALL_T : segLen;
+                createBox(w, customHeight, d, wallMat, cx, customHeight / 2, cz, wallsGroup);
+            }
+        }
+
+        // ============================================================================
+        // 4. 평면도(1~10번 구역) 기반 바닥, 벽체, 지붕 생성
+        // ============================================================================
+        // 외부 데크/대지 베이스
+        const baseGround = createBox(28, 0.2, 16, new THREE.MeshStandardMaterial({ color: 0x262320, roughness: 0.9 }), 0.5, -0.26, -0.2, floorsGroup, false, true);
+
+        // [바닥 구역 생성]
+        // (1) 좌측 하단 침실/작업실 & 입구/욕실1
+        addFloorZone(-11.0, 1.0, -8.2, 4.5, MAT.floorWarmWood, "Room1_Study");
+        addFloorZone(-11.0, -2.5, -8.2, 1.0, MAT.floorBathTile, "Left_Bath_Utility");
+
+        // (2) 거실 & 복도 & 주방/다이닝 (밝은 원목 마루)
+        addFloorZone(-8.2, -4.5, -3.5, 4.5, MAT.floorLightWood, "Room2_LivingAndKitchen");
+        addFloorZone(-3.5, -1.0, 5.5, 0.5, MAT.floorLightWood, "Main_Corridor");
+
+        // (10) 유리 진열장 방 & (9) 식재료 창고
+        addFloorZone(-3.5, -3.3, -2.0, -1.0, MAT.floorLightWood, "Room10_GlassShowcase");
+        addFloorZone(-2.0, -2.8, -0.8, -1.0, MAT.floorBathTile, "Room9_Pantry");
+
+        // 북측 중앙 욕실 및 현관 포이어
+        addFloorZone(-0.8, -2.6, 1.2, -1.0, MAT.floorBathTile, "Center_Bathroom");
+        addFloorZone(1.2, -3.0, 3.0, -1.0, MAT.floorBathTile, "Entrance_Foyer");
+
+        // (3) 파란색 벽지 혼술바
+        addFloorZone(-3.5, 0.5, -1.0, 4.5, MAT.floorWarmWood, "Room3_HomeBar");
+
+        // (4) 중앙 정원 (테라스 타일)
+        addFloorZone(-1.0, 0.5, 3.0, 4.5, MAT.floorGardenTile, "Room4_Garden");
+
+        // (5) 우측 서재 & 창가 소파룸
+        addFloorZone(3.0, 0.5, 5.5, 4.5, MAT.floorWarmWood, "Room5_ChristianStudy");
+
+        // (8) 북측 다용도 책장 방
+        addFloorZone(3.0, -4.2, 5.2, -1.0, MAT.floorWarmWood, "Room8_StorageStudy");
+
+        // (7, 7-1) 드레스룸 & 북동측 안방 욕실
+        addFloorZone(5.2, -2.8, 7.2, -0.5, MAT.floorWarmWood, "Room7_Closet");
+        addFloorZone(7.2, -2.8, 9.0, -0.5, MAT.floorWarmWood, "Room7_1_Closet");
+        addFloorZone(5.2, -4.5, 8.2, -2.8, MAT.floorBathTile, "Master_Bathroom");
+
+        // (6) 안방 & 남동측 발코니 & 우측 끝 광폭 발코니
+        addFloorZone(5.5, -0.5, 9.0, 3.5, MAT.floorWarmWood, "Room6_MasterBedroom");
+        addFloorZone(5.5, 3.5, 9.0, 4.5, MAT.floorGardenTile, "South_Balcony");
+        addFloorZone(9.0, -4.5, 11.2, 4.5, MAT.floorGardenTile, "East_GrandTerrace");
+
+        // [외벽 및 내벽 + 창문/문 개구부 생성]
+        // 1) 남측 전면 외벽 (큰 유리창이 연속된 미니멀 파사드)
+        addWallWithOpenings(-11.0, 4.5, -8.2, 4.5, [{ offset: 1.4, width: 1.8, type: 'window', sill: 0.5, top: 2.4 }]); // (1) 작업실 창문
+        addWallWithOpenings(-8.2, 4.5, -3.5, 4.5, [{ offset: 2.35, width: 3.6, type: 'sliding_glass', sill: 0.15, top: 2.5 }]); // (2) 거실 대형 통창
+        addWallWithOpenings(-3.5, 4.5, -1.0, 4.5, [{ offset: 1.25, width: 1.5, type: 'window', sill: 0.6, top: 2.4 }]); // (3) 혼술바 창문
+        // (4) 정원 남측 낮은 난간 유리벽
+        addWallWithOpenings(-1.0, 4.5, 3.0, 4.5, [{ offset: 2.0, width: 3.4, type: 'window', sill: 0.4, top: 1.3 }], MAT.wallWhite, 1.4);
+        addWallWithOpenings(3.0, 4.5, 5.5, 4.5, [{ offset: 1.25, width: 1.6, type: 'window', sill: 0.5, top: 2.4 }]); // (5) 서재 창문
+        addWallWithOpenings(5.5, 4.5, 11.2, 4.5, [
+            { offset: 1.75, width: 2.4, type: 'window', sill: 0.5, top: 2.4 },
+            { offset: 4.5, width: 1.8, type: 'window', sill: 0.5, top: 2.4 }
+        ]);
+
+        // 2) 좌측(서측) 및 우측(동측) 외벽
+        addWallWithOpenings(-11.0, -2.5, -11.0, 4.5, []); // 피아노가 있던 좌측 외벽 창문을 막힌 벽으로 대체
+        addWallWithOpenings(11.2, -4.5, 11.2, 4.5, [
+            { offset: 2.5, width: 2.8, type: 'window', sill: 0.5, top: 2.4 },
+            { offset: 6.5, width: 2.8, type: 'window', sill: 0.5, top: 2.4 }
+        ]);
+
+        // 3) 북측 계단형 외벽 (평면도 상단 윤곽 재현)
+        addWallWithOpenings(-11.0, -2.5, -8.2, -2.5, [{ offset: 1.4, width: 1.0, type: 'window', sill: 1.1, top: 2.2 }]);
+        addWallWithOpenings(-8.2, -4.5, -8.2, -2.5, []);
+        addWallWithOpenings(-8.2, -4.5, -3.5, -4.5, [{ offset: 2.5, width: 2.2, type: 'window', sill: 0.85, top: 2.3 }]); // 주방 싱크대 창문
+        addWallWithOpenings(-3.5, -4.5, -3.5, -3.3, []);
+        addWallWithOpenings(-3.5, -3.3, -2.0, -3.3, [{ offset: 0.75, width: 0.9, type: 'window', sill: 0.9, top: 2.2 }]);
+        addWallWithOpenings(-2.0, -3.3, -2.0, -2.8, []);
+        addWallWithOpenings(-2.0, -2.8, -0.8, -2.8, []);
+        addWallWithOpenings(-0.8, -2.8, -0.8, -2.6, []);
+        addWallWithOpenings(-0.8, -2.6, 1.2, -2.6, [{ offset: 1.0, width: 0.9, type: 'window', sill: 1.2, top: 2.2 }]);
+        addWallWithOpenings(1.2, -3.0, 1.2, -2.6, []);
+        addWallWithOpenings(1.2, -3.0, 3.0, -3.0, [{ offset: 0.9, width: 1.1, type: 'door', top: 2.2 }]); // 메인 현관문
+        addWallWithOpenings(3.0, -4.2, 3.0, -3.0, []);
+        addWallWithOpenings(3.0, -4.2, 5.2, -4.2, [{ offset: 1.1, width: 1.3, type: 'window', sill: 0.7, top: 2.3 }]); // (8) 북측 창문
+        addWallWithOpenings(5.2, -4.5, 5.2, -4.2, []);
+        addWallWithOpenings(5.2, -4.5, 11.2, -4.5, [{ offset: 1.5, width: 1.4, type: 'window', sill: 1.1, top: 2.3 }]);
+
+        // 4) 실내 공간 분리 내벽 및 방문/유리문 개구부
+        // (1)번 방 위쪽의 통합 화장실과 (2)번 거실 사이 벽 (화장실을 거치지 않도록 막힌 벽으로 분리)
+        addWallWithOpenings(-8.2, -2.5, -8.2, 1.0, []);
+        // (1)번 작업실과 (2)번 거실 사이 벽: 1번 방 북동쪽 코너에서 거실로 바로 한 번에 통하는 오픈 통로(문짝 없음)
+        addWallWithOpenings(-8.2, 1.0, -8.2, 4.5, [
+            { offset: 0.55, width: 0.9, type: 'open', top: 2.15 } // 1번 방에서 거실로 바로 이어지는 단일 통로
+        ]);
+        // (1)번 작업실 북측 벽: 가운데 칸막이 벽을 없애 하나의 화장실로 합치고, 여닫이 문 없이 오픈 통로만 배치
+        addWallWithOpenings(-11.0, 1.0, -8.2, 1.0, [
+            { offset: 0.75, width: 0.85, type: 'open', top: 2.15 } // 통합 화장실로 들어가는 오픈 통로 (문짝 없음)
+        ]);
+
+        // (2) 거실 우측 벽 & (3) 혼술바 좌측 벽
+        addWallWithOpenings(-3.5, 0.5, -3.5, 4.5, []);
+        // (3) 혼술바 북측 벽 (복도에서 들어가는 문) + 파란색 포인트 벽지 적용
+        addWallWithOpenings(-3.5, 0.5, -1.0, 0.5, [{ offset: 0.75, width: 0.9, type: 'door', top: 2.15 }], MAT.wallBlue);
+        // 혼술바 내부 벽면에 파란색 벽지 레이어 추가
+        createBox(0.03, WALL_H - 0.02, 3.85, MAT.wallBlue, -3.4, WALL_H / 2, 2.5, wallsGroup);
+        createBox(2.35, WALL_H - 0.02, 0.03, MAT.wallBlue, -2.25, WALL_H / 2, 4.39, wallsGroup);
+
+        // (3) 혼술바와 (4) 정원 사이 유리창/유리도어 벽
+        addWallWithOpenings(-1.0, 0.5, -1.0, 4.5, [{ offset: 2.0, width: 1.8, type: 'sliding_glass', sill: 0.1, top: 2.35 }], MAT.wallBlue);
+
+        // (4) 정원 북측 대형 슬라이딩 통유리창 (복도와 정원 연결)
+        addWallWithOpenings(-1.0, 0.5, 3.0, 0.5, [{ offset: 2.0, width: 3.1, type: 'sliding_glass', sill: 0.05, top: 2.4 }]);
+
+        // (4) 정원과 (5) 서재 사이 유리창 벽
+        addWallWithOpenings(3.0, 0.5, 3.0, 4.5, [{ offset: 2.0, width: 1.8, type: 'sliding_glass', sill: 0.1, top: 2.35 }]);
+
+        // (5) 서재 북측 벽 (복도와 연결되는 방문)
+        addWallWithOpenings(3.0, 0.5, 5.5, 0.5, [{ offset: 0.8, width: 0.9, type: 'door', top: 2.15 }]);
+
+        // (5) 서재와 (6) 안방 사이 벽
+        addWallWithOpenings(5.5, -0.5, 5.5, 4.5, [{ offset: 0.55, width: 0.95, type: 'door', top: 2.15 }]);
+
+        // (10) 유리문 진열장 공간 (주방/식탁 우측: 기둥을 아예 없애고 전면/측면 전체를 통유리 파티션 및 유리문으로 제작)
+        createBox(0.06, WALL_H, 2.3, MAT.glassCabinet, -3.5, WALL_H / 2, -2.15, windowsGroup, false, false);
+        createBox(1.5, WALL_H, 0.06, MAT.glassCabinet, -2.75, WALL_H / 2, -1.0, windowsGroup, false, false);
+        // 유리문 손잡이 (크롬 바) 및 반쯤 열린 유리 도어 연출
+        createBox(0.03, 0.45, 0.03, MAT.chrome, -3.54, 1.05, -1.85, doorsGroup);
+        createBox(0.03, 0.45, 0.03, MAT.chrome, -2.55, 1.05, -0.96, doorsGroup);
+
+        // (9) 식재료 창고(팬트리) 벽 및 문
+        addWallWithOpenings(-2.0, -3.3, -2.0, -1.0, []);
+        addWallWithOpenings(-2.0, -1.0, -0.8, -1.0, [{ offset: 0.6, width: 0.8, type: 'door', top: 2.15 }]);
+        addWallWithOpenings(-0.8, -2.8, -0.8, -1.0, []);
+
+        // 중앙 욕실 및 현관 벽
+        addWallWithOpenings(-0.8, -1.0, 3.0, -1.0, [
+            { offset: 0.9, width: 0.8, type: 'door', top: 2.15 },
+            { offset: 2.9, width: 1.2, type: 'open', top: 2.35 }
+        ]);
+        addWallWithOpenings(1.2, -2.6, 1.2, -1.0, []);
+        addWallWithOpenings(3.0, -4.2, 3.0, -1.0, []);
+
+        // (8) 다용도 책장 방 벽 및 문
+        addWallWithOpenings(3.0, -1.0, 5.2, -1.0, [{ offset: 1.1, width: 0.9, type: 'door', top: 2.15 }]);
+        addWallWithOpenings(5.2, -4.2, 5.2, -0.5, [{ offset: 2.6, width: 0.85, type: 'door', top: 2.15 }]);
+
+        // (7, 7-1) 드레스룸 및 (6) 안방 연결 벽
+        addWallWithOpenings(5.2, -2.8, 9.0, -2.8, [{ offset: 2.3, width: 0.8, type: 'door', top: 2.15 }]);
+        addWallWithOpenings(7.2, -2.8, 7.2, -0.5, [{ offset: 1.15, width: 0.85, type: 'door', top: 2.15 }]);
+        addWallWithOpenings(5.2, -0.5, 9.0, -0.5, [
+            { offset: 1.0, width: 0.9, type: 'door', top: 2.15 },
+            { offset: 2.9, width: 0.9, type: 'door', top: 2.15 }
+        ]);
+        addWallWithOpenings(9.0, -2.8, 9.0, 4.5, [
+            { offset: 4.5, width: 1.8, type: 'sliding_glass', sill: 0.1, top: 2.35 } // 안방 우측 벽 창문/슬라이딩 도어
+        ]);
+        addWallWithOpenings(5.5, 3.5, 9.0, 3.5, [{ offset: 1.75, width: 2.0, type: 'sliding_glass', sill: 0.1, top: 2.35 }]);
+
+        // [지붕(Roof) 생성 - 버튼으로 숨기기/보이기 제어 가능]
+        // (4)번 중앙 정원은 오픈 테라스이므로 지붕에서 개방되도록 분할 배치
+        createBox(7.5, 0.18, 9.2, MAT.roofMat, -7.25, WALL_H + 0.09, 0.0, roofGroup); // 좌측(작업실+거실+주방) 지붕
+        createBox(2.5, 0.18, 4.0, MAT.roofMat, -2.25, WALL_H + 0.09, 2.5, roofGroup); // (3) 혼술바 지붕
+        createBox(6.5, 0.18, 4.0, MAT.roofMat, -0.25, WALL_H + 0.09, -1.5, roofGroup); // 복도+팬트리+욕실 지붕
+        createBox(8.2, 0.18, 9.2, MAT.roofMat, 7.1, WALL_H + 0.09, 0.0, roofGroup);   // 우측(서재+안방+드레스룸+다용도실) 지붕
+        // 정원 상단 우드 퍼골라 루버
+        for (let x = -0.8; x <= 2.8; x += 0.45) {
+            createBox(0.08, 0.12, 3.9, MAT.woodWarm, x, WALL_H + 0.06, 2.5, roofGroup);
+        }
+        // 초기에는 내부가 한눈에 보이도록 지붕 숨김 상태로 시작
+        roofGroup.visible = false;
+
+        // ============================================================================
+        // 5. 가구 생성 헬퍼 함수 및 방별(1~10번) 맞춤 가구 배치
+        // ============================================================================
+        // 책이 가득 꽂힌 책장 생성기 (테마별 색상 지원)
+        function createBookcase(x, z, rotY, width = 1.6, height = 2.1, depth = 0.36, theme = "general", addCross = false) {
+            const g = new THREE.Group();
+            g.position.set(x, 0, z);
+            g.rotation.y = rotY;
+
+            // 책장 프레임
+            createBox(width, height, 0.04, MAT.woodWarm, 0, height / 2, -depth / 2 + 0.02, g);
+            createBox(0.05, height, depth, MAT.woodWarm, -width / 2 + 0.025, height / 2, 0, g);
+            createBox(0.05, height, depth, MAT.woodWarm, width / 2 - 0.025, height / 2, 0, g);
+
+            const shelves = 5;
+            const palette = theme === "medical_korean"
+                ? [0x1d3557, 0x457b9d, 0xf1faee, 0xe63946, 0x2a9d8f, 0xe9c46a] // 의학서적(네이비/화이트) + 한국소설(파스텔/단행본)
+                : theme === "christian"
+                    ? [0x2b2d42, 0x8d0801, 0xd4af37, 0x4a4e69, 0x1b4332, 0xf4f1de] // 기독교 서적/성경/주석(블랙/버건디/골드)
+                    : [0x264653, 0x2a9d8f, 0xe9c46a, 0xf4a261, 0xe76f51];
+
+            for (let s = 0; s <= shelves; s++) {
+                const sy = (s / shelves) * (height - 0.1) + 0.05;
+                createBox(width - 0.04, 0.04, depth, MAT.woodWarm, 0, sy, 0, g);
+
+                if (s < shelves) {
+                    const shelfH = (height - 0.1) / shelves;
+                    if (theme === "clutter" && s % 2 === 1) {
+                        // (8) 잡동사니 수납 박스 및 소품
+                        createBox(0.38, 0.24, 0.28, MAT.beigeSofa, -0.35, sy + 0.14, 0.02, g);
+                        createBox(0.34, 0.22, 0.26, new THREE.MeshStandardMaterial({ color: 0x6c757d }), 0.15, sy + 0.13, 0.02, g);
+                        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), new THREE.MeshStandardMaterial({ color: 0xe76f51 }));
+                        ball.position.set(0.5, sy + 0.12, 0.04);
+                        g.add(ball);
+                    } else {
+                        // 빽빽하게 꽂힌 책들
+                        let bx = -width / 2 + 0.1;
+                        while (bx < width / 2 - 0.12) {
+                            const bw = 0.045 + (Math.abs(Math.sin(bx * 17 + s)) * 0.04);
+                            const bh = shelfH * (0.68 + Math.abs(Math.cos(bx * 11 + s)) * 0.18);
+                            const col = palette[Math.floor(Math.abs(Math.sin(bx * 23 + s * 7)) * palette.length)];
+                            const bMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.6 });
+                            createBox(bw, bh, depth * 0.72, bMat, bx + bw / 2, sy + 0.02 + bh / 2, 0.02, g);
+                            bx += bw + 0.012;
+                        }
+                    }
+                }
+            }
+
+            // (5) 기독교 서적 책장 상단 십자가 오브제
+            if (addCross) {
+                const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.3 });
+                createBox(0.05, 0.32, 0.05, goldMat, 0, height + 0.16, 0, g);
+                createBox(0.2, 0.05, 0.05, goldMat, 0, height + 0.22, 0, g);
+            }
+
+            furnitureGroup.add(g);
+            return g;
+        }
+
+        // 화분 생성기
+        function createPottedPlant(x, z, scale = 1.0, potColor = 0xffffff) {
+            const g = new THREE.Group();
+            g.position.set(x, 0, z);
+            const potMat = new THREE.MeshStandardMaterial({ color: potColor, roughness: 0.4 });
+            const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22 * scale, 0.16 * scale, 0.36 * scale, 16), potMat);
+            pot.position.y = 0.18 * scale;
+            pot.castShadow = true;
+            g.add(pot);
+
+            const soil = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * scale, 0.2 * scale, 0.05 * scale, 16), MAT.soil);
+            soil.position.y = 0.35 * scale;
+            g.add(soil);
+
+            for (let i = 0; i < 5; i++) {
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.18 * scale, 12, 12), i % 2 === 0 ? MAT.leafGreen : MAT.leafDark);
+                const ang = (i / 5) * Math.PI * 2;
+                leaf.position.set(Math.cos(ang) * 0.1 * scale, (0.48 + (i % 2) * 0.12) * scale, Math.sin(ang) * 0.1 * scale);
+                leaf.castShadow = true;
+                g.add(leaf);
+            }
+            furnitureGroup.add(g);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 1] 제일 왼쪽 침실(1) -> 슬림 책장(우측 밀착), 피아노(책장 좌측), 책상/의자(기존 피아노 자리, 책장을 등지고 배치), 책장 맞은편 침대
+        // ----------------------------------------------------------------------------
+        {
+            const r1 = new THREE.Group();
+            r1.name = "Room1_Study_Piano";
+
+            // 북측 통합 화장실 내부 기본 설비(세면대, 양변기, 욕조) 배치 - 하나의 넓은 화장실 공간 표현
+            createBox(0.9, 0.82, 0.52, MAT.whitePlastic, -10.2, 0.41, -2.15, r1); // 세면대 하부장
+            createBox(0.94, 0.05, 0.55, MAT.whiteMarble, -10.2, 0.84, -2.15, r1); // 세면대 대리석 상판
+            createBox(0.85, 1.1, 0.04, MAT.glass, -10.2, 1.55, -2.4, r1);         // 거울
+            createBox(0.42, 0.42, 0.58, MAT.whitePlastic, -9.1, 0.21, -2.1, r1);  // 양변기
+            createBox(0.42, 0.78, 0.22, MAT.whitePlastic, -9.1, 0.39, -2.3, r1);  // 양변기 수조
+            createBox(0.75, 0.55, 1.55, MAT.whitePlastic, -8.65, 0.28, -0.6, r1); // 통합 화장실 우측 욕조
+
+            // 1) 책장: 얇게 만들어(depth: 0.20) 우측 벽(x = -8.28)의 통로 남측 구간에 완전 밀착 배치
+            createBookcase(-8.38, 3.25, -Math.PI / 2, 2.1, 2.1, 0.20, "general");
+
+            // 2) 피아노: 우측 벽의 얇은 책장 바로 좌측에 나란히 배치 (건반이 좌측을 향하도록)
+            createBox(0.56, 1.22, 1.44, MAT.blackMetal, -8.80, 0.61, 3.25, r1);
+            createBox(0.20, 0.08, 1.30, MAT.whitePlastic, -9.12, 0.74, 3.25, r1); // 피아노 건반
+            createBox(0.34, 0.46, 0.56, MAT.blackMetal, -9.45, 0.23, 3.25, r1);   // 피아노 의자
+
+            // 3) 책상과 의자: 기존 피아노가 있던 좌측 영역에 배치하되, 우측 책장을 등지고 앉도록 배치
+            const deskGroup = new THREE.Group();
+            deskGroup.name = "Marble_Desk_Backing_Bookcase";
+            deskGroup.position.set(-10.25, 0, 2.15);
+            deskGroup.rotation.y = Math.PI / 2; // 의자가 책장(동쪽)과 책상 사이에 놓여 책장을 등지고 서쪽(좌측 벽)을 바라보게 회전
+
+            // 흰색 대리석 책상 위판 (상판)
+            createBox(1.3, 0.06, 0.65, MAT.whiteMarble, 0, 0.74, 0, deskGroup);
+            // 책상 하부 메탈 프레임 다리
+            createBox(0.08, 0.72, 0.60, MAT.blackMetal, -0.58, 0.36, 0, deskGroup);
+            createBox(0.08, 0.72, 0.60, MAT.blackMetal, 0.58, 0.36, 0, deskGroup);
+            // 모니터 & 스탠드 (서쪽 벽 방향)
+            createBox(0.52, 0.34, 0.04, MAT.blackMetal, 0, 1.02, -0.18, deskGroup);
+            createBox(0.14, 0.14, 0.14, MAT.chrome, 0, 0.82, -0.20, deskGroup);
+            // 책상 의자 (책장을 등지고 앉는 위치)
+            createBox(0.46, 0.06, 0.46, MAT.blackMetal, 0, 0.46, 0.52, deskGroup);
+            createBox(0.44, 0.5, 0.06, MAT.blackMetal, 0, 0.72, 0.73, deskGroup); // 등받이가 책장 쪽을 향함
+            createBox(0.08, 0.44, 0.08, MAT.chrome, 0, 0.22, 0.52, deskGroup);
+            r1.add(deskGroup);
+
+            // 4) 책장 맞은편(좌측 벽, 남서쪽 코너)에 침대 배치
+            const bedGroup = new THREE.Group();
+            bedGroup.name = "Room1_Bed_Opposite_Bookcase";
+            bedGroup.position.set(-10.0, 0, 3.75);
+            createBox(1.75, 0.28, 1.15, MAT.woodWarm, 0, 0.14, 0, bedGroup); // 침대 프레임
+            createBox(0.12, 0.95, 1.18, MAT.woodDark, -0.84, 0.48, 0, bedGroup); // 좌측 벽(책장 맞은편) 밀착 헤드보드
+            createBox(1.62, 0.22, 1.05, MAT.whitePlastic, 0.04, 0.36, 0, bedGroup); // 매트리스
+            createBox(1.10, 0.24, 1.07, new THREE.MeshStandardMaterial({ color: 0x90caf9, roughness: 0.75 }), 0.28, 0.37, 0, bedGroup); // 이불
+            createBox(0.28, 0.10, 0.55, MAT.whitePlastic, -0.52, 0.50, 0, bedGroup); // 베개
+            r1.add(bedGroup);
+
+            furnitureGroup.add(r1);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 2] 거실: 좌측 벽에 하늘색 소파, 중앙 검은색 테이블, 우측 벽에 카카오프렌즈 인형, 제네바 스피커, TV 배치
+        // ----------------------------------------------------------------------------
+        {
+            const r2 = new THREE.Group();
+            r2.name = "Room2_LivingRoom";
+
+            // 좌측 벽(x = -8.12)에 하늘색 패브릭 소파 배치
+            createBox(0.92, 0.42, 2.75, MAT.skyBlueSofa, -7.58, 0.21, 2.55, r2); // 소파 좌방석
+            createBox(0.22, 0.88, 2.75, MAT.skyBlueSofa, -7.98, 0.44, 2.55, r2); // 소파 등받이
+            createBox(0.92, 0.62, 0.22, MAT.skyBlueSofa, -7.58, 0.31, 1.25, r2); // 북측 팔걸이
+            createBox(0.92, 0.62, 0.22, MAT.skyBlueSofa, -7.58, 0.31, 3.85, r2); // 남측 팔걸이
+
+            // 중앙 검은색 커피 테이블
+            createBox(0.85, 0.38, 1.45, MAT.blackMetal, -6.15, 0.19, 2.55, r2);
+
+            // 우측 벽(x = -3.58)에 TV 거실장 & 대형 벽걸이 TV
+            createBox(0.48, 0.46, 2.3, MAT.woodWarm, -3.88, 0.23, 2.55, r2);
+            createBox(0.08, 1.05, 1.85, MAT.blackMetal, -3.65, 1.35, 2.55, r2);
+
+            // 우측 벽 TV 옆 제네바(Geneva) 스탠드 스피커 (인형과 위치 교체 -> z = 3.92, 짧은 기둥 + 큼직한 로즈골드 육면체 본체)
+            const roseGoldMat = new THREE.MeshStandardMaterial({ color: 0xe09f87, roughness: 0.22, metalness: 0.78 });
+            createBox(0.40, 0.03, 0.40, MAT.chrome, -3.9, 0.015, 3.92, r2);   // 하단 받침대
+            createBox(0.07, 0.30, 0.07, MAT.chrome, -3.9, 0.165, 3.92, r2);   // 짧아진 스탠드 기둥
+            createBox(0.56, 0.62, 0.74, roseGoldMat, -3.9, 0.62, 3.92, r2);   // 커진 로즈골드 육면체 본체
+
+            // 우측 벽 카카오프렌즈 인형 (스피커와 위치 교체 -> z = 1.12, 라이언 & 어피치 스타일 피규어)
+            const kakaoGroup = new THREE.Group();
+            kakaoGroup.position.set(-3.9, 0, 1.12);
+            // 라이언 (노란색 곰돌이 형태)
+            const ryanBody = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.36, 16), MAT.ryanYellow);
+            ryanBody.position.set(0, 0.18, -0.15);
+            kakaoGroup.add(ryanBody);
+            const ryanHead = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), MAT.ryanYellow);
+            ryanHead.position.set(0, 0.48, -0.15);
+            kakaoGroup.add(ryanHead);
+            const rEar1 = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), MAT.ryanYellow);
+            rEar1.position.set(0, 0.65, -0.28);
+            const rEar2 = rEar1.clone();
+            rEar2.position.set(0, 0.65, -0.02);
+            kakaoGroup.add(rEar1, rEar2);
+
+            // 어피치 (핑크색 복숭아 형태)
+            const apeachBody = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.15, 0.3, 16), MAT.apeachPink);
+            apeachBody.position.set(0, 0.15, 0.22);
+            kakaoGroup.add(apeachBody);
+            const apeachHead = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 16), MAT.apeachPink);
+            apeachHead.position.set(0, 0.4, 0.22);
+            kakaoGroup.add(apeachHead);
+            r2.add(kakaoGroup);
+
+            furnitureGroup.add(r2);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 3] 침대는 빼고 파란색 벽지의 혼술바(하단 와인셀러 + 흰색 대리석 상판 + 90도 회전) + 좌측 벽 의학서적/한국소설 책장
+        // ----------------------------------------------------------------------------
+        {
+            const r3 = new THREE.Group();
+            r3.name = "Room3_SoloBar_Library";
+
+            // 좌측 벽(x = -3.3)에 의학서적, 한국소설이 꽉 찬 대형 책장 2연속 배치
+            createBookcase(-3.22, 1.65, Math.PI / 2, 1.65, 2.25, 0.36, "medical_korean");
+            createBookcase(-3.22, 3.35, Math.PI / 2, 1.65, 2.25, 0.36, "medical_korean");
+
+            // 혼술바 테이블 & 하단 빌트인 와인셀러 그룹 (기존 대비 90도 회전 배치)
+            const barGroup = new THREE.Group();
+            barGroup.name = "SoloBar_With_WineCellar_Rotated90";
+            barGroup.position.set(-2.05, 0, 2.75);
+            barGroup.rotation.y = Math.PI / 2; // 90도 회전
+
+            // 1) 혼술바 상판: 고급 흰색 대리석 위판
+            createBox(0.72, 0.07, 1.65, MAT.whiteMarble, 0, 1.04, 0, barGroup);
+
+            // 2) 혼술바 아랫쪽 빌트인 와인셀러(Wine Cellar) 하부 본체
+            // 좌우 및 후면/하단 다크 메탈 프레임 하우징
+            createBox(0.58, 1.0, 0.08, MAT.blackMetal, 0, 0.5, -0.76, barGroup); // 좌측 측판
+            createBox(0.58, 1.0, 0.08, MAT.blackMetal, 0, 0.5, 0.76, barGroup);  // 우측 측판
+            createBox(0.06, 1.0, 1.44, MAT.blackMetal, 0.26, 0.5, 0, barGroup);  // 후면 판
+            createBox(0.58, 0.08, 1.44, MAT.blackMetal, 0, 0.04, 0, barGroup);   // 바닥 베이스
+            createBox(0.58, 0.06, 1.44, MAT.blackMetal, 0, 0.97, 0, barGroup);   // 상단 프레임
+            createBox(0.56, 0.9, 0.05, MAT.blackMetal, 0, 0.5, 0, barGroup);     // 듀얼 존 와인셀러 중앙 격벽
+
+            // 와인셀러 내부 은은한 앰버 LED 백라이트 패널
+            const cellarGlowMat = new THREE.MeshStandardMaterial({
+                color: 0xffb703,
+                emissive: 0xfb8500,
+                emissiveIntensity: 0.55,
+                roughness: 0.4
+            });
+            createBox(0.02, 0.82, 1.36, cellarGlowMat, 0.22, 0.5, 0, barGroup);
+
+            // 와인셀러 내부 원목 와인 렉(선반) 3단 & 눕혀진 와인병들
+            const wineBottleDark = new THREE.MeshStandardMaterial({ color: 0x2b1118, roughness: 0.15, metalness: 0.2 });
+            const wineBottleGreen = new THREE.MeshStandardMaterial({ color: 0x1b4332, roughness: 0.15, metalness: 0.2 });
+            const foilRed = new THREE.MeshStandardMaterial({ color: 0x9b2226, roughness: 0.3, metalness: 0.5 });
+
+            [0.24, 0.5, 0.74].forEach((shelfY, sIdx) => {
+                // 좌/우 와인셀러 원목 슬라이딩 선반
+                createBox(0.46, 0.03, 0.64, MAT.woodWarm, 0, shelfY, -0.36, barGroup);
+                createBox(0.46, 0.03, 0.64, MAT.woodWarm, 0, shelfY, 0.36, barGroup);
+
+                // 선반 위 눕혀진 와인병 배치
+                [-0.54, -0.36, -0.18, 0.18, 0.36, 0.54].forEach((bz, bIdx) => {
+                    const bottle = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.042, 0.042, 0.32, 12),
+                        (sIdx + bIdx) % 2 === 0 ? wineBottleDark : wineBottleGreen
+                    );
+                    bottle.rotation.z = Math.PI / 2;
+                    bottle.position.set(-0.02, shelfY + 0.055, bz);
+                    barGroup.add(bottle);
+
+                    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.09, 10), foilRed);
+                    neck.rotation.z = Math.PI / 2;
+                    neck.position.set(-0.2, shelfY + 0.055, bz);
+                    barGroup.add(neck);
+                });
+            });
+
+            // 와인셀러 전면 유리 도어 (2도어) & 스테인리스 손잡이
+            const cellarGlassMat = new THREE.MeshPhysicalMaterial({
+                color: 0x1e293b,
+                transparent: true,
+                opacity: 0.42,
+                roughness: 0.08,
+                metalness: 0.1
+            });
+            createBox(0.025, 0.86, 0.66, cellarGlassMat, -0.28, 0.5, -0.36, barGroup, false, false);
+            createBox(0.025, 0.86, 0.66, cellarGlassMat, -0.28, 0.5, 0.36, barGroup, false, false);
+            // 도어 메탈 핸들
+            createBox(0.03, 0.55, 0.025, MAT.chrome, -0.31, 0.5, -0.08, barGroup);
+            createBox(0.03, 0.55, 0.025, MAT.chrome, -0.31, 0.5, 0.08, barGroup);
+
+            // 3) 바 스툴 의자 2개 (90도 회전된 바 방향에 맞춰 배치)
+            [-0.42, 0.42].forEach(zPos => {
+                const stool = new THREE.Group();
+                stool.position.set(-0.68, 0, zPos);
+                createBox(0.07, 0.68, 0.07, MAT.chrome, 0, 0.34, 0, stool);
+                const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 16), MAT.woodWarm);
+                seat.position.y = 0.7;
+                stool.add(seat);
+                barGroup.add(stool);
+            });
+
+            // 4) 흰색 대리석 바 상판 위 위스키 병, 온더락 잔, 미니 무드램프
+            const bottleMat = new THREE.MeshPhysicalMaterial({ color: 0xb5651d, transparent: true, opacity: 0.75, roughness: 0.1 });
+            const bottle1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.28, 12), bottleMat);
+            bottle1.position.set(0.08, 1.21, -0.45);
+            barGroup.add(bottle1);
+            const bottle2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.25, 12), new THREE.MeshPhysicalMaterial({ color: 0x2d6a4f, transparent: true, opacity: 0.75 }));
+            bottle2.position.set(0.08, 1.2, -0.2);
+            barGroup.add(bottle2);
+            const lamp = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.2, 16), new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xff9f1c, emissiveIntensity: 0.6 }));
+            lamp.position.set(0.05, 1.25, 0.48);
+            barGroup.add(lamp);
+
+            r3.add(barGroup);
+            furnitureGroup.add(r3);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 4] 작은 화분들이 있고 흰색 탁자와 의자가 있는 정원
+        // ----------------------------------------------------------------------------
+        {
+            const r4 = new THREE.Group();
+            r4.name = "Room4_TerraceGarden";
+
+            // 원형 흰색 정원 탁자
+            const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.06, 24), MAT.whitePlastic);
+            tableTop.position.set(1.0, 0.74, 2.55);
+            tableTop.castShadow = true;
+            r4.add(tableTop);
+            const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.72, 12), MAT.whitePlastic);
+            tableLeg.position.set(1.0, 0.36, 2.55);
+            r4.add(tableLeg);
+            const tableBase = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.04, 16), MAT.whitePlastic);
+            tableBase.position.set(1.0, 0.02, 2.55);
+            r4.add(tableBase);
+
+            // 흰색 정원 의자 3개
+            [[0.05, 2.55, Math.PI / 2], [1.95, 2.55, -Math.PI / 2], [1.0, 1.6, 0]].forEach(([cx, cz, rot]) => {
+                const chair = new THREE.Group();
+                chair.position.set(cx, 0, cz);
+                chair.rotation.y = rot;
+                createBox(0.46, 0.05, 0.46, MAT.whitePlastic, 0, 0.44, 0, chair);
+                createBox(0.46, 0.45, 0.05, MAT.whitePlastic, 0, 0.68, -0.21, chair);
+                createBox(0.05, 0.44, 0.05, MAT.whitePlastic, -0.19, 0.22, -0.19, chair);
+                createBox(0.05, 0.44, 0.05, MAT.whitePlastic, 0.19, 0.22, -0.19, chair);
+                createBox(0.05, 0.44, 0.05, MAT.whitePlastic, -0.19, 0.22, 0.19, chair);
+                createBox(0.05, 0.44, 0.05, MAT.whitePlastic, 0.19, 0.22, 0.19, chair);
+                r4.add(chair);
+            });
+
+            // 정원 둘레의 아기자기한 작은 화분들 & 플랜트 박스
+            createPottedPlant(-0.45, 3.9, 1.15, 0xffffff);
+            createPottedPlant(0.35, 4.05, 0.85, 0xf4a261);
+            createPottedPlant(1.65, 4.05, 0.9, 0xffffff);
+            createPottedPlant(2.45, 3.85, 1.25, 0xe9c46a);
+            createPottedPlant(-0.45, 1.15, 0.95, 0xffffff);
+            createPottedPlant(2.45, 1.15, 1.0, 0xffffff);
+
+            furnitureGroup.add(r4);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 5] 우측 벽에 기독교 종교서적이 꽉 차있는 책장, 창가에는 소파 배치 (침대 제외)
+        // ----------------------------------------------------------------------------
+        {
+            const r5 = new THREE.Group();
+            r5.name = "Room5_ChristianLibrary_Sofa";
+
+            // 우측 벽(x = 5.3)에 기독교 서적이 꽉 찬 대형 책장 + 십자가 장식
+            createBookcase(5.22, 1.65, -Math.PI / 2, 1.55, 2.2, 0.36, "christian", true);
+            createBookcase(5.22, 3.25, -Math.PI / 2, 1.55, 2.2, 0.36, "christian", false);
+
+            // 남측 창가(z = 4.1)에 아늑한 소파 배치
+            createBox(1.85, 0.42, 0.82, MAT.beigeSofa, 4.15, 0.21, 3.85, r5);
+            createBox(1.85, 0.85, 0.2, MAT.beigeSofa, 4.15, 0.43, 4.18, r5);
+            createBox(0.2, 0.6, 0.82, MAT.beigeSofa, 3.3, 0.3, 3.85, r5);
+            createBox(0.2, 0.6, 0.82, MAT.beigeSofa, 5.0, 0.3, 3.85, r5);
+            // 독서용 보조 티테이블
+            createBox(0.65, 0.42, 0.45, MAT.woodOak, 4.15, 0.21, 2.95, r5);
+
+            furnitureGroup.add(r5);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 6] 침대는 우측 벽에 붙어있게 하고 공기청정기를 설치
+        // ----------------------------------------------------------------------------
+        {
+            const r6 = new THREE.Group();
+            r6.name = "Room6_MasterBedroom";
+
+            // 우측 벽(x = 8.9)에 헤드보드가 밀착된 킹사이즈 침대
+            const bedX = 7.85;
+            const bedZ = 1.6;
+            createBox(2.05, 0.32, 1.85, MAT.woodWarm, bedX, 0.16, bedZ, r6); // 침대 프레임
+            createBox(0.14, 1.15, 1.9, MAT.woodDark, 8.82, 0.58, bedZ, r6); // 우측 벽 밀착 헤드보드
+            createBox(1.88, 0.26, 1.72, MAT.whitePlastic, bedX - 0.04, 0.42, bedZ, r6); // 매트리스
+            createBox(1.25, 0.28, 1.74, new THREE.MeshStandardMaterial({ color: 0xe9d8a6, roughness: 0.75 }), bedX - 0.34, 0.43, bedZ, r6); // 침구 이불
+            // 베개 2개
+            createBox(0.32, 0.12, 0.62, MAT.whitePlastic, 8.5, 0.6, bedZ - 0.45, r6);
+            createBox(0.32, 0.12, 0.62, MAT.whitePlastic, 8.5, 0.6, bedZ + 0.45, r6);
+
+            // 원통형 타워 공기청정기 (안방 내 설치)
+            const purifier = new THREE.Group();
+            purifier.position.set(6.15, 0, 2.85);
+            const pBody = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.86, 24), MAT.whitePlastic);
+            pBody.position.y = 0.43;
+            pBody.castShadow = true;
+            purifier.add(pBody);
+            const pGrill = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 24), MAT.blackMetal);
+            pGrill.position.y = 0.85;
+            purifier.add(pGrill);
+            const pLed = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.015, 8, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+            pLed.rotation.x = Math.PI / 2;
+            pLed.position.y = 0.87;
+            purifier.add(pLed);
+            r6.add(purifier);
+
+            furnitureGroup.add(r6);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 7, 7-1] 옷장(드레스룸)으로 구성
+        // ----------------------------------------------------------------------------
+        {
+            const r7 = new THREE.Group();
+            r7.name = "Room7_WalkInClosets";
+
+            // (7) 시스템 행거 및 대형 붙박이 옷장
+            createBox(0.55, 2.3, 2.0, MAT.woodOak, 5.55, 1.15, -1.65, r7);
+            createBox(1.5, 2.3, 0.52, MAT.woodOak, 6.2, 1.15, -2.45, r7);
+            // 행거 봉 & 걸려있는 옷들 표현
+            createBox(0.04, 0.04, 1.8, MAT.chrome, 5.7, 1.85, -1.65, r7);
+            const shirtColors = [0x3b82f6, 0xf8fafc, 0x64748b, 0xf59e0b, 0x10b981];
+            for (let i = 0; i < 5; i++) {
+                createBox(0.38, 0.65, 0.12, new THREE.MeshStandardMaterial({ color: shirtColors[i] }), 5.68, 1.45, -2.25 + i * 0.3, r7);
+            }
+
+            // (7-1) 서브 드레스룸 옷장 & 아일랜드 악세서리 수납장
+            createBox(0.52, 2.3, 1.9, MAT.woodOak, 8.65, 1.15, -1.65, r7);
+            createBox(0.65, 0.88, 0.9, MAT.whitePlastic, 7.9, 0.44, -1.65, r7);
+
+            furnitureGroup.add(r7);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 8] 침대는 빼고 잡동사니가 있는 책장으로 구성
+        // ----------------------------------------------------------------------------
+        {
+            // (8) 좌측/우측/중앙에 잡동사니와 서적이 섞인 수납 책장 배치
+            createBookcase(3.28, -2.6, Math.PI / 2, 2.2, 2.15, 0.38, "clutter");
+            createBookcase(4.92, -2.6, -Math.PI / 2, 2.2, 2.15, 0.38, "clutter");
+            createBookcase(4.1, -3.85, 0, 1.5, 2.15, 0.38, "clutter");
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 9] 식재료를 보관하는 창고 (팬트리)
+        // ----------------------------------------------------------------------------
+        {
+            const r9 = new THREE.Group();
+            r9.name = "Room9_FoodPantry";
+
+            // 다단 식재료 선반 (좌측/북측 벽)
+            for (let h = 0.35; h <= 1.95; h += 0.5) {
+                createBox(0.38, 0.04, 1.5, MAT.woodOak, -1.72, h, -1.9, r9);
+                // 식재료 용기, 쌀포대, 와인/오일 병, 통조림 배치
+                createBox(0.24, 0.22, 0.28, MAT.whitePlastic, -1.72, h + 0.13, -2.35, r9);
+                createBox(0.22, 0.26, 0.24, new THREE.MeshStandardMaterial({ color: 0xe9c46a }), -1.72, h + 0.15, -1.9, r9);
+                const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.22, 12), new THREE.MeshStandardMaterial({ color: 0xd62828 }));
+                jar.position.set(-1.72, h + 0.13, -1.45);
+                r9.add(jar);
+            }
+            furnitureGroup.add(r9);
+        }
+
+        // ----------------------------------------------------------------------------
+        // [구역 10] 약, 술잔, 가족사진을 보관하는 유리문으로 된 곳 + 유리문 밖 부엌과 식탁
+        // ----------------------------------------------------------------------------
+        {
+            const r10 = new THREE.Group();
+            r10.name = "Room10_Showcase_KitchenDining";
+
+            // 1) (10) 유리문 내부 진열장: 상비약, 크리스탈 술잔, 가족사진 액자 보관
+            const cabX = -2.65;
+            const cabZ = -2.15;
+            createBox(0.45, 2.1, 1.65, MAT.woodWarm, -2.28, 1.05, cabZ, r10);
+            // 진열장 유리 도어 패널
+            createBox(0.03, 2.0, 1.55, MAT.glassCabinet, -2.52, 1.05, cabZ, r10);
+
+            // 상단 선반: 가족사진 액자 3점
+            [cabZ - 0.45, cabZ, cabZ + 0.45].forEach((fz, idx) => {
+                createBox(0.06, 0.28, 0.22, MAT.woodDark, -2.35, 1.52, fz, r10);
+                createBox(0.07, 0.22, 0.16, new THREE.MeshStandardMaterial({ color: idx === 1 ? 0xffe5d9 : 0xd8e2dc }), -2.36, 1.52, fz, r10);
+            });
+
+            // 중단 선반: 크리스탈 술잔/와인잔 세트
+            for (let gz = cabZ - 0.5; gz <= cabZ + 0.5; gz += 0.25) {
+                const goblet = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.03, 0.18, 12), MAT.glass);
+                goblet.position.set(-2.36, 1.08, gz);
+                r10.add(goblet);
+            }
+
+            // 하단 선반: 구급함 & 약병/영양제 보관함
+            createBox(0.24, 0.18, 0.32, MAT.whitePlastic, -2.35, 0.62, cabZ - 0.35, r10);
+            createBox(0.02, 0.1, 0.03, new THREE.MeshStandardMaterial({ color: 0xe63946 }), -2.48, 0.62, cabZ - 0.35, r10); // 적십자 마크
+            createBox(0.02, 0.03, 0.1, new THREE.MeshStandardMaterial({ color: 0xe63946 }), -2.48, 0.62, cabZ - 0.35, r10);
+            for (let pz = cabZ + 0.05; pz <= cabZ + 0.5; pz += 0.15) {
+                const pillBottle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 12), new THREE.MeshStandardMaterial({ color: 0xf4a261 }));
+                pillBottle.position.set(-2.36, 0.6, pz);
+                r10.add(pillBottle);
+            }
+
+            // 2) 유리문 밖(서측) 부엌 & 식사할 때 쓰는 원목 다이닝 식탁
+            // 북측 벽 주방 싱크대 & 조리대 & 냉장고
+            createBox(3.4, 0.9, 0.68, MAT.whitePlastic, -5.8, 0.45, -4.05, r10);
+            createBox(3.45, 0.05, 0.72, MAT.chrome, -5.8, 0.92, -4.05, r10); // 상판
+            createBox(0.85, 2.05, 0.75, MAT.blackMetal, -7.8, 1.025, -4.0, r10); // 양문형 냉장고
+
+            // 아일랜드 조리대 + 6인용 원목 식탁 결합형 (유리문 바로 앞 공간)
+            createBox(0.95, 0.92, 1.5, MAT.whitePlastic, -6.35, 0.46, -2.15, r10); // 아일랜드
+            createBox(1.85, 0.07, 1.05, MAT.woodWarm, -4.95, 0.76, -2.15, r10);    // 식탁 상판
+            createBox(0.08, 0.74, 0.08, MAT.woodDark, -5.75, 0.37, -2.58, r10);
+            createBox(0.08, 0.74, 0.08, MAT.woodDark, -4.15, 0.37, -2.58, r10);
+            createBox(0.08, 0.74, 0.08, MAT.woodDark, -5.75, 0.37, -1.72, r10);
+            createBox(0.08, 0.74, 0.08, MAT.woodDark, -4.15, 0.37, -1.72, r10);
+
+            // 다이닝 식탁 의자 4개
+            [-5.4, -4.5].forEach(cx => {
+                [-2.85, -1.45].forEach((cz, idx) => {
+                    const ch = new THREE.Group();
+                    ch.position.set(cx, 0, cz);
+                    if (idx === 1) ch.rotation.y = Math.PI;
+                    createBox(0.44, 0.05, 0.44, MAT.woodWarm, 0, 0.45, 0, ch);
+                    createBox(0.44, 0.42, 0.05, MAT.woodWarm, 0, 0.68, -0.2, ch);
+                    createBox(0.05, 0.44, 0.05, MAT.woodDark, -0.18, 0.22, -0.18, ch);
+                    createBox(0.05, 0.44, 0.05, MAT.woodDark, 0.18, 0.22, -0.18, ch);
+                    createBox(0.05, 0.44, 0.05, MAT.woodDark, -0.18, 0.22, 0.18, ch);
+                    createBox(0.05, 0.44, 0.05, MAT.woodDark, 0.18, 0.22, 0.18, ch);
+                    r10.add(ch);
+                });
+            });
+
+            furnitureGroup.add(r10);
+        }
+
+        // ============================================================================
+        // 6. 공간별 카메라 시점 프리셋 및 3D 플로팅 라벨 생성
+        // ============================================================================
+        const ROOM_PRESETS = {
+            default: {
+                title: "처음 화면 (197㎡ 펜트하우스 조감도)",
+                desc: "남서쪽 늦은 오후의 따뜻한 햇살이 큰 유리창을 통해 실내 원목 마루로 길게 드리워지는 기본 조감 시점입니다.",
+                pos: new THREE.Vector3(-4, 21, 22),
+                target: new THREE.Vector3(0.5, 0.5, 0.5)
+            },
+            overview: {
+                title: "전체 보기 (평면도 비교 뷰)",
+                desc: "첨부해주신 평면도(1번~10번)와 1:1로 대조해볼 수 있는 상단 수직 조감 시점입니다.",
+                pos: new THREE.Vector3(0.2, 26, 4.5),
+                target: new THREE.Vector3(0.2, 0, 0.2)
+            },
+            room1: {
+                title: "(1) 작업실 / 침실 & 통합 화장실",
+                desc: "가운데 벽을 없애 북측 공간을 하나의 넓은 화장실로 합치고, 여닫이 문 없이 오픈 통로로 연결했습니다. 1번 방에서 거실로 가는 통로 역시 전실을 거치지 않고 한 번에 바로 통하도록 구성했습니다.",
+                pos: new THREE.Vector3(-9.6, 5.2, 8.2),
+                target: new THREE.Vector3(-9.6, 0.8, 2.2)
+            },
+            room2: {
+                title: "(2) 메인 거실",
+                desc: "좌측 벽에 하늘색 소파, 중앙에 검은색 테이블, 우측 벽에 대형 TV와 위치를 맞바꾼 카카오프렌즈 인형(북측) 및 로즈골드 대형 제네바 스피커(남측, 짧은 스탠드 기둥)를 배치했습니다.",
+                pos: new THREE.Vector3(-6.2, 5.5, 8.8),
+                target: new THREE.Vector3(-5.5, 0.9, 2.4)
+            },
+            room3: {
+                title: "(3) 파란색 벽지 혼술바 & 와인셀러",
+                desc: "파란색 벽지의 혼술바를 90도 회전하고 상판을 흰색 대리석으로 마감했습니다. 혼술바 아랫쪽에는 LED 조명이 켜진 빌트인 와인셀러를 배치했습니다.",
+                pos: new THREE.Vector3(-1.5, 4.8, 7.6),
+                target: new THREE.Vector3(-2.2, 0.9, 2.6)
+            },
+            room4: {
+                title: "(4) 미니멀 중정 정원",
+                desc: "작은 화분들이 둘러싸고 있고 중앙에 흰색 원형 탁자와 흰색 의자가 놓인 채광 가득한 정원 테라스입니다.",
+                pos: new THREE.Vector3(1.0, 5.4, 8.5),
+                target: new THREE.Vector3(1.0, 0.8, 2.5)
+            },
+            room5: {
+                title: "(5) 기독교 서재 & 창가 소파룸",
+                desc: "침대를 빼고 우측 벽에 기독교 종교서적이 꽉 찬 책장(십자가 오브제 포함)을 두고, 남측 창가에 아늑한 소파를 배치했습니다.",
+                pos: new THREE.Vector3(3.6, 5.2, 7.8),
+                target: new THREE.Vector3(4.3, 1.0, 2.6)
+            },
+            room6: {
+                title: "(6) 마스터 안방",
+                desc: "킹사이즈 침대가 우측 벽에 밀착되어 있으며, 쾌적한 실내 공기를 위한 타워형 공기청정기가 설치되어 있습니다.",
+                pos: new THREE.Vector3(6.2, 5.8, 6.8),
+                target: new THREE.Vector3(7.4, 0.8, 1.6)
+            },
+            room7: {
+                title: "(7, 7-1) 워크인 드레스룸 옷장",
+                desc: "안방과 연결된 (7), (7-1) 구역을 시스템 행거와 붙박이장, 아일랜드 수납장이 있는 드레스룸 옷장으로 구성했습니다.",
+                pos: new THREE.Vector3(7.2, 6.5, 2.2),
+                target: new THREE.Vector3(7.1, 1.0, -1.6)
+            },
+            room8: {
+                title: "(8) 다용도 수납 책장 방",
+                desc: "침대를 빼고 다양한 생활 잡동사니와 수납 박스가 정리된 대형 책장 룸으로 구성했습니다.",
+                pos: new THREE.Vector3(4.1, 6.2, 1.5),
+                target: new THREE.Vector3(4.1, 1.0, -2.6)
+            },
+            room9: {
+                title: "(9) 식재료 보관 창고 (팬트리)",
+                desc: "주방 옆에 위치한 다단 선반 형태의 식재료 보관 창고입니다.",
+                pos: new THREE.Vector3(-1.4, 5.5, 1.8),
+                target: new THREE.Vector3(-1.4, 1.0, -2.0)
+            },
+            room10: {
+                title: "(10) 통유리 진열장 & 부엌·다이닝 식탁",
+                desc: "벽 기둥을 완전히 없애고 전체를 투명한 유리로 마감한 진열장 공간(10)에 약, 술잔, 가족사진 액자를 보관하며, 유리 밖으로는 부엌과 6인용 식탁이 이어집니다.",
+                pos: new THREE.Vector3(-5.2, 5.8, 2.2),
+                target: new THREE.Vector3(-4.2, 1.0, -2.2)
+            }
+        };
+
+        // 3D 공간 라벨 생성
+        const ROOM_MARKERS = [
+            { key: 'room1', num: '1', name: '작업실(피아노/책상)', pos: new THREE.Vector3(-9.6, 1.6, 2.8) },
+            { key: 'room2', num: '2', name: '거실(하늘색소파/TV/라이언)', pos: new THREE.Vector3(-5.8, 1.6, 2.5) },
+            { key: 'room3', num: '3', name: '혼술바(의학·한국소설)', pos: new THREE.Vector3(-2.2, 1.6, 2.5) },
+            { key: 'room4', num: '4', name: '정원(흰탁자/화분)', pos: new THREE.Vector3(1.0, 1.4, 2.5) },
+            { key: 'room5', num: '5', name: '기독교서재/창가소파', pos: new THREE.Vector3(4.2, 1.6, 2.5) },
+            { key: 'room6', num: '6', name: '안방(우측침대/공기청정기)', pos: new THREE.Vector3(7.4, 1.6, 1.6) },
+            { key: 'room7', num: '7', name: '옷장(7, 7-1)', pos: new THREE.Vector3(7.0, 1.8, -1.6) },
+            { key: 'room8', num: '8', name: '잡동사니 책장방', pos: new THREE.Vector3(4.1, 1.8, -2.6) },
+            { key: 'room9', num: '9', name: '식재료 창고', pos: new THREE.Vector3(-1.4, 1.8, -2.0) },
+            { key: 'room10', num: '10', name: '유리문보관실 & 부엌/식탁', pos: new THREE.Vector3(-3.8, 1.8, -2.2) }
+        ];
+
+        const labelsContainer = document.getElementById('labels-container');
+        let labelsVisible = true;
+
+        ROOM_MARKERS.forEach(m => {
+            const el = document.createElement('div');
+            el.className = 'room-label';
+            el.innerHTML = `<span class="badge">${m.num}</span>${m.name}`;
+            el.addEventListener('click', () => moveCameraToPreset(m.key));
+            labelsContainer.appendChild(el);
+            m.element = el;
+        });
+
+        // ============================================================================
+        // 7. 카메라 부드러운 이동 애니메이션 및 UI 이벤트 핸들러
+        // ============================================================================
+        let camAnim = null;
+
+        function moveCameraToPreset(presetKey) {
+            const preset = ROOM_PRESETS[presetKey];
+            if (!preset) return;
+
+            document.getElementById('info-title').textContent = preset.title;
+            document.getElementById('info-desc').textContent = preset.desc;
+
+            camAnim = {
+                startPos: camera.position.clone(),
+                endPos: preset.pos.clone(),
+                startTarget: controls.target.clone(),
+                endTarget: preset.target.clone(),
+                startTime: performance.now(),
+                duration: 950
+            };
+        }
+
+        // 하단 카메라 버튼 이벤트 연결
+        document.querySelectorAll('.cam-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.getAttribute('data-cam');
+                moveCameraToPreset(key);
+            });
+        });
+
+        // 지붕 숨기기 / 보이기 토글 버튼
+        const btnRoof = document.getElementById('btn-roof');
+        btnRoof.addEventListener('click', () => {
+            roofGroup.visible = !roofGroup.visible;
+            if (!roofGroup.visible) {
+                btnRoof.innerHTML = `<span>🏠 지붕 숨기기 (켜짐)</span><span class="w-2 h-2 rounded-full bg-zinc-950"></span>`;
+                btnRoof.className = "flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition shadow";
+            } else {
+                btnRoof.innerHTML = `<span>🏠 지붕 보이기 (켜짐)</span><span class="w-2 h-2 rounded-full bg-amber-400"></span>`;
+                btnRoof.className = "flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-amber-300 hover:bg-zinc-700 border border-amber-500/40 transition";
+            }
+        });
+
+        // 벽 높이 조절 토글 (내부를 더 시원하게 볼 수 있는 하프월 모드 지원)
+        let lowWallMode = false;
+        const btnWallHeight = document.getElementById('btn-wall-height');
+        btnWallHeight.addEventListener('click', () => {
+            lowWallMode = !lowWallMode;
+            const scaleY = lowWallMode ? 0.42 : 1.0;
+            wallsGroup.scale.y = scaleY;
+            windowsGroup.scale.y = scaleY;
+            doorsGroup.scale.y = scaleY;
+            btnWallHeight.querySelector('span').textContent = lowWallMode ? "🧱 벽 높이: 낮게 (내부 관찰)" : "🧱 벽 높이: 기본 (2.8m)";
+        });
+
+        // 라벨 표시 토글
+        const toggleLabelsBtn = document.getElementById('toggle-labels-btn');
+        toggleLabelsBtn.addEventListener('click', () => {
+            labelsVisible = !labelsVisible;
+            labelsContainer.style.display = labelsVisible ? 'block' : 'none';
+            toggleLabelsBtn.textContent = labelsVisible ? '라벨 숨기기' : '라벨 보이기';
+        });
+
+        // 오후 햇빛 각도 조절 슬라이더
+        const sunSlider = document.getElementById('sun-slider');
+        sunSlider.addEventListener('input', (e) => {
+            const deg = parseFloat(e.target.value);
+            const rad = THREE.MathUtils.degToRad(deg);
+            const dist = 26;
+            sunLight.position.set(-Math.cos(rad) * dist, Math.sin(rad) * dist * 0.85 + 4, Math.sin(rad) * dist);
+        });
+
+        // 사용자가 마우스로 직접 조작 시 자동 카메라 이동 중단
+        controls.addEventListener('start', () => { camAnim = null; });
+
+        // 반응형 리사이즈 대응
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ============================================================================
+        // 8. 메인 렌더링 루프
+        // ============================================================================
+        function updateLabels() {
+            if (!labelsVisible) return;
+            const halfW = window.innerWidth / 2;
+            const halfH = window.innerHeight / 2;
+
+            ROOM_MARKERS.forEach(m => {
+                const v = m.pos.clone();
+                v.project(camera);
+                if (v.z > 1) {
+                    m.element.style.display = 'none';
+                    return;
+                }
+                m.element.style.display = 'block';
+                const x = (v.x * halfW) + halfW;
+                const y = -(v.y * halfH) + halfH;
+                m.element.style.left = `${x}px`;
+                m.element.style.top = `${y}px`;
+            });
+        }
+
+        function animate(now) {
+            requestAnimationFrame(animate);
+
+            if (camAnim) {
+                const elapsed = now - camAnim.startTime;
+                const t = Math.min(1, elapsed / camAnim.duration);
+                // Smooth ease-out cubic
+                const ease = 1 - Math.pow(1 - t, 3);
+                camera.position.lerpVectors(camAnim.startPos, camAnim.endPos, ease);
+                controls.target.lerpVectors(camAnim.startTarget, camAnim.endTarget, ease);
+                if (t >= 1) camAnim = null;
+            }
+
+            controls.update();
+            updateLabels();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            animate(performance.now());
+        };
+    </script>
+</body>
+
+</html>
